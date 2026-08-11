@@ -1,0 +1,4 @@
+interface:
+  display_name: "ComfyUI Video Generator"
+  short_description: "Generate MiniMax H3 videos through ComfyUI"
+  default_prompt: "Use $comfy-video to generate a MiniMax H3 video through ComfyUI."
