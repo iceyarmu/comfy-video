@@ -332,7 +332,7 @@ def main():
     parser.add_argument("--last_frame", help="Last-frame image path; requires --first_frame")
     parser.add_argument("--ratio", choices=ASPECT_RATIOS, default="16:9")
     parser.add_argument("--duration", type=float, default=15.0)
-    parser.add_argument("--megapixels", type=float, default=0.4)
+    parser.add_argument("--megapixels", type=float, default=0.7)
     parser.add_argument("--steps", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--ref_image_size", choices=["match", "max"], default="match")

@@ -43,7 +43,7 @@ order. Do not combine reference images with first or last frames.
 | `--reference_image` | By mode | - | 1-9 ordered reference images |
 | `--ratio` | No | `16:9` | Aspect ratio |
 | `--duration` | No | `15` | Duration in seconds |
-| `--megapixels` | No | `0.4` | Output megapixels |
+| `--megapixels` | No | `0.7` | Output megapixels |
 | `--steps` | No | Workflow value | Scheduler steps |
 | `--seed` | No | Workflow value | Noise seed |
 | `--ref_image_size` | No | `match` | `match` or `max` |
@@ -63,4 +63,3 @@ order. Do not combine reference images with first or last frames.
 - `command -v python3`
 - `python3 -c "import requests"`
 - Confirm `COMFYUI_API_URL` is set.
-
