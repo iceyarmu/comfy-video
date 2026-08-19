@@ -23,6 +23,7 @@ IMAGE_WORKFLOW = SKILL_ROOT / "workflows" / "video_minimax_h3_i2v.json"
 REFERENCE_WORKFLOW = SKILL_ROOT / "workflows" / "video_minimax_h3_r2v.json"
 POLL_INTERVAL = 10
 TIMEOUT = 1800
+CLEANUP_ENDPOINT = "/comfy_video/file"
 SUPPORTED_IMAGE_EXTS = {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
 VIDEO_EXTS = {".avi", ".mkv", ".mov", ".mp4", ".webm"}
 ASPECT_RATIOS = {
@@ -35,6 +36,10 @@ ASPECT_RATIOS = {
     "16:9": "16:9 (Widescreen)",
     "21:9": "21:9 (Ultrawide)",
 }
+
+
+class CleanupUnavailable(Exception):
+    """The comfy_video_cleanup extension is not installed on the ComfyUI server."""
 
 
 def fail(message):
@@ -106,6 +111,7 @@ def request_json(response, action):
 
 
 def upload_image(session, base_url, path, index):
+    """Upload one image and return (workflow reference, artifact locator)."""
     safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in path.name)
     remote_name = f"comfy-video-{uuid.uuid4().hex[:8]}-{index + 1}-{safe_name}"
     mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
@@ -125,7 +131,9 @@ def upload_image(session, base_url, path, index):
     if not name:
         fail(f"unexpected upload response: {result}")
     subfolder = result.get("subfolder") or ""
-    return f"{subfolder}/{name}" if subfolder else name
+    reference = f"{subfolder}/{name}" if subfolder else name
+    artifact = {"filename": name, "subfolder": subfolder, "type": result.get("type") or "input"}
+    return reference, artifact
 
 
 def load_workflow(mode, custom_path):
@@ -299,14 +307,19 @@ def select_video(entry):
     return next((item for item in artifacts if Path(item["filename"]).suffix.lower() in VIDEO_EXTS), artifacts[0])
 
 
-def download_video(session, base_url, artifact, filename):
-    path = Path(filename).expanduser().resolve()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    params = {
+def artifact_params(artifact):
+    """Query parameters that locate an artifact on the server."""
+    return {
         "filename": artifact["filename"],
         "subfolder": artifact.get("subfolder") or "",
         "type": artifact.get("type") or "output",
     }
+
+
+def download_video(session, base_url, artifact, filename):
+    path = Path(filename).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    params = artifact_params(artifact)
     print("Downloading video...", file=sys.stderr)
     try:
         response = session.get(f"{base_url}/view", params=params, stream=True, timeout=300)
@@ -324,6 +337,73 @@ def download_video(session, base_url, artifact, filename):
     return str(path)
 
 
+def describe_artifact(artifact):
+    subfolder = artifact.get("subfolder") or ""
+    name = f"{subfolder}/{artifact['filename']}" if subfolder else artifact["filename"]
+    return f"{artifact.get('type') or 'output'}:{name}"
+
+
+def delete_remote_file(session, base_url, artifact):
+    """Delete one server-side file; return None on success or a failure reason."""
+    try:
+        response = session.delete(
+            f"{base_url}{CLEANUP_ENDPOINT}", params=artifact_params(artifact), timeout=60
+        )
+    except requests.RequestException as exc:
+        return str(exc)
+    if response.status_code == 404:
+        # The extension answers a missing file with 200 and reason "not_found",
+        # so a 404 means the route itself is not registered.
+        raise CleanupUnavailable
+    if not response.ok:
+        return f"HTTP {response.status_code}: {response.text.strip()[:200]}"
+    try:
+        result = response.json()
+    except requests.JSONDecodeError:
+        return f"unexpected response: {response.text.strip()[:200]}"
+    if not result.get("deleted"):
+        return result.get("reason") or result.get("error") or "server declined the deletion"
+    return None
+
+
+def delete_history_entry(session, base_url, prompt_id):
+    """Drop the task's history record; return None on success or a reason."""
+    try:
+        response = session.post(f"{base_url}/history", json={"delete": [prompt_id]}, timeout=60)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        return str(exc)
+    return None
+
+
+def cleanup_remote(session, base_url, artifacts, prompt_id):
+    """Best-effort removal of what this run left on the ComfyUI server.
+
+    Never raises: the video is already on local disk by the time this runs, so a
+    cleanup failure is reported as a warning rather than failing the command.
+    """
+    if not artifacts and not prompt_id:
+        return
+    print(f"Cleaning up {len(artifacts)} remote file(s)...", file=sys.stderr)
+    warnings = []
+    try:
+        for artifact in artifacts:
+            reason = delete_remote_file(session, base_url, artifact)
+            if reason:
+                warnings.append(f"cannot delete {describe_artifact(artifact)}: {reason}")
+    except CleanupUnavailable:
+        warnings.append(
+            f"{base_url}{CLEANUP_ENDPOINT} is not registered, so {len(artifacts)} file(s) stay on the "
+            "server; install custom_nodes/comfy_video_cleanup into ComfyUI and restart it"
+        )
+    if prompt_id:
+        reason = delete_history_entry(session, base_url, prompt_id)
+        if reason:
+            warnings.append(f"cannot clear history entry {prompt_id}: {reason}")
+    for warning in warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate MiniMax H3 videos through ComfyUI")
     parser.add_argument("--prompt", "-p", required=True, help="H3 video prompt")
@@ -338,6 +418,11 @@ def main():
     parser.add_argument("--ref_image_size", choices=["match", "max"], default="match")
     parser.add_argument("--workflow", help="Compatible API-format workflow JSON")
     parser.add_argument("--filename", "-f", required=True, help="Output video path")
+    parser.add_argument(
+        "--keep_remote",
+        action="store_true",
+        help="Keep the uploaded images and rendered video on the ComfyUI server",
+    )
     args = parser.parse_args()
 
     mode, image_paths = validate_args(args)
@@ -346,11 +431,31 @@ def main():
     print(f"Mode: {mode}", file=sys.stderr)
 
     with requests.Session() as session:
-        remote_images = [upload_image(session, base_url, path, index) for index, path in enumerate(image_paths)]
-        patch_workflow(workflow, mode, remote_images, args)
-        prompt_id = submit_workflow(session, base_url, workflow)
-        entry = poll_history(session, base_url, prompt_id)
-        saved_path = download_video(session, base_url, select_video(entry), args.filename)
+        remote_images = []
+        remote_artifacts = []
+        prompt_id = None
+        finished = False
+        try:
+            for index, path in enumerate(image_paths):
+                reference, artifact = upload_image(session, base_url, path, index)
+                remote_images.append(reference)
+                remote_artifacts.append(artifact)
+            patch_workflow(workflow, mode, remote_images, args)
+            prompt_id = submit_workflow(session, base_url, workflow)
+            entry = poll_history(session, base_url, prompt_id)
+            video_artifact = select_video(entry)
+            saved_path = download_video(session, base_url, video_artifact, args.filename)
+            # Queue the video for deletion only once it is safely on local disk.
+            remote_artifacts.append(video_artifact)
+            finished = True
+        finally:
+            if args.keep_remote:
+                pass
+            elif prompt_id is not None and not finished:
+                # The task may still be running and reading the uploaded images.
+                print(f"Warning: remote files kept; task {prompt_id} did not finish cleanly", file=sys.stderr)
+            else:
+                cleanup_remote(session, base_url, remote_artifacts, prompt_id)
     print(saved_path)
 
 
