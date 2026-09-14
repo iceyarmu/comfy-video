@@ -407,7 +407,10 @@ def cleanup_remote(session, base_url, artifacts, prompt_id):
 def main():
     parser = argparse.ArgumentParser(description="Generate MiniMax H3 videos through ComfyUI")
     parser.add_argument("--prompt", "-p", required=True, help="H3 video prompt")
-    parser.add_argument("--reference_image", nargs="+", help="Reference image paths, up to 9")
+    parser.add_argument(
+        "--reference_image", nargs="+", action="extend",
+        help="Reference image paths, up to 9 total; can be repeated",
+    )
     parser.add_argument("--first_frame", help="First-frame image path")
     parser.add_argument("--last_frame", help="Last-frame image path; requires --first_frame")
     parser.add_argument("--ratio", choices=ASPECT_RATIOS, default="16:9")
