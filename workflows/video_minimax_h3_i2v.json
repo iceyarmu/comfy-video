@@ -1,17 +1,18 @@
 {
   "92": {
     "inputs": {
-      "filename_prefix": "video/MiniMax_H3",
-      "format": "auto",
+      "include_workflow_metadata": false,
+      "format": "mp4",
       "codec": "auto",
+      "filename": "MiniMax_H3",
       "video": [
         "105:91",
         0
       ]
     },
-    "class_type": "SaveVideo",
+    "class_type": "PreviewVideoTemporary",
     "_meta": {
-      "title": "Save Video"
+      "title": "Preview Video"
     }
   },
   "114": {
