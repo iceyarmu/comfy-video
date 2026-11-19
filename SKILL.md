@@ -1,6 +1,6 @@
 ---
 name: comfy-video
-description: Generate MiniMax H3 videos through ComfyUI from a first frame (I2VA), first and last frames (FL2VA), or 1-9 reference images (Ref2VA). Use when the user asks to generate an H3 video through a configured ComfyUI API. Do not use for prompt-only requests.
+description: Generate MiniMax H3 videos through ComfyUI from text, a first frame (I2VA), first and last frames (FL2VA), or 1-9 reference images (Ref2VA). Use when the user asks to generate an H3 video through a configured ComfyUI API.
 ---
 
 # ComfyUI Video
@@ -25,11 +25,13 @@ environment; never place a server address in the script.
 
 | Mode | Trigger | Workflow |
 |---|---|---|
+| T2VA | Prompt only (default) | `video_minimax_h3_i2v.json` (FL2VA with both frames disconnected) |
+| T2VA | Prompt only, with the ErosMax v9 workflow selected | `H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9.json` |
 | I2VA | `--first_frame` | `video_minimax_h3_i2v.json` |
 | FL2VA | `--first_frame` and `--last_frame` | `video_minimax_h3_i2v.json` |
 | Ref2VA | `--reference_image` | `video_minimax_h3_r2v.json` |
 
-The prompt must contain `<Picture 1>` through `<Picture N>` in image argument
+When providing images, the prompt must contain `<Picture 1>` through `<Picture N>` in image argument
 order. Do not combine reference images with first or last frames.
 
 ## Parameters
@@ -47,10 +49,10 @@ order. Do not combine reference images with first or last frames.
 | `--steps` | No | Workflow value | Scheduler steps |
 | `--seed` | No | Workflow value | Noise seed |
 | `--ref_image_size` | No | `match` | `match` or `max` |
-| `--workflow` | No | Bundled workflow | Compatible API workflow JSON path or bundled ErosMax v9 name |
+| `--workflow` | No | Bundled workflow | Workflow JSON path or bundled filename suffix (e.g. `i2v` or `v9`). Multiple matches use the first filename in sorted order. |
 
 Use `--workflow H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9` for
-ErosMax two-pass generation with any of the three image modes. The server
+ErosMax two-pass generation from text alone or with any of the three image modes. The server
 needs the workflow's models and custom nodes. For v9, `--steps` sets the
 first pass (the second uses 3 steps), and `--megapixels` sets the second-pass
 target before RTX upscaling.

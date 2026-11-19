@@ -61,8 +61,6 @@ def validate_args(args):
         fail("--reference_image cannot be combined with --first_frame/--last_frame")
     if args.reference_image and len(args.reference_image) > 9:
         fail("--reference_image supports at most 9 images")
-    if not args.reference_image and not args.first_frame:
-        fail("provide --first_frame or --reference_image")
     if not math.isfinite(args.duration) or args.duration <= 0:
         fail("--duration must be a finite positive number")
     if not math.isfinite(args.megapixels) or args.megapixels <= 0:
@@ -76,9 +74,12 @@ def validate_args(args):
     elif args.last_frame:
         mode = "fl2va"
         images = [args.first_frame, args.last_frame]
-    else:
+    elif args.first_frame:
         mode = "i2va"
         images = [args.first_frame]
+    else:
+        mode = "t2va"
+        images = []
 
     image_paths = []
     for value in images:
@@ -136,13 +137,20 @@ def upload_image(session, base_url, path, index):
 
 def load_workflow(mode, custom_path):
     default = REFERENCE_WORKFLOW if mode == "ref2va" else IMAGE_WORKFLOW
-    if custom_path == erosmax_v9.NAME:
-        custom_path = SKILL_ROOT / "workflows" / f"{erosmax_v9.NAME}.json"
     path = Path(custom_path).expanduser().resolve() if custom_path else default
+    if custom_path and Path(custom_path).name == custom_path and not path.is_file():
+        suffix = Path(custom_path).stem if custom_path.endswith(".json") else custom_path
+        for candidate in sorted(default.parent.glob("*.json")):
+            if candidate.stem.endswith(suffix) and candidate.is_file():
+                path = candidate
+                break
+        else:
+            fail(f"no bundled workflow name ends with {suffix!r} in {default.parent}")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        workflow = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         fail(f"cannot read workflow {path}: {exc}")
+    return workflow
 
 
 def nodes_by_class(workflow, class_type):
@@ -211,9 +219,12 @@ def patch_workflow(workflow, mode, remote_images, args):
         return erosmax_v9.build_prompt(workflow, remote_images, mode, args, ASPECT_RATIOS[args.ratio])
     if isinstance(workflow.get("nodes"), list):
         fail("unsupported editor workflow; provide a compatible API-format JSON")
-    if mode in {"i2va", "fl2va"}:
+    if mode in {"t2va", "i2va", "fl2va"}:
         video_node = one_node(workflow, "MiniMaxH3ImageToVideo")[1]
-        set_image_input(workflow, video_node, "first_frame", remote_images[0])
+        if mode == "t2va":
+            video_node["inputs"].pop("first_frame", None)
+        else:
+            set_image_input(workflow, video_node, "first_frame", remote_images[0])
         if mode == "fl2va":
             set_image_input(workflow, video_node, "last_frame", remote_images[1])
         else:
@@ -349,13 +360,13 @@ def main():
     parser.add_argument("--steps", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--ref_image_size", choices=["match", "max"], default="match")
-    parser.add_argument("--workflow", help="Bundled ErosMax v9 workflow name or compatible workflow JSON path")
+    parser.add_argument("--workflow", help="Bundled workflow filename suffix (e.g. v9 or i2v) or workflow JSON path")
     parser.add_argument("--filename", "-f", required=True, help="Output video path")
     args = parser.parse_args()
 
     mode, image_paths = validate_args(args)
-    base_url = get_base_url()
     workflow = load_workflow(mode, args.workflow)
+    base_url = get_base_url()
     print(f"Mode: {mode}", file=sys.stderr)
 
     with requests.Session() as session:
