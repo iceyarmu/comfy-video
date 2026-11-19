@@ -1,6 +1,6 @@
 ---
 name: comfy-video
-description: Generate MiniMax H3 videos through ComfyUI from text, a first frame (I2VA), first and last frames (FL2VA), or 1-9 reference images (Ref2VA). Use when the user asks to generate an H3 video through a configured ComfyUI API.
+description: Generate MiniMax H3 videos through ComfyUI from text, a first frame (I2VA), first and last frames (FL2VA), or reference images, videos, and audio (Ref2VA). Use when the user asks to generate an H3 video through a configured ComfyUI API.
 ---
 
 # ComfyUI Video
@@ -13,7 +13,7 @@ Generate MiniMax H3 videos with the bundled ComfyUI workflows.
 python3 /absolute/path/to/comfy-video/scripts/generate_video.py \
   --prompt "description with <Picture 1>" \
   --filename "output.mp4" \
-  [--reference_image path1 path2] \
+  [--reference_image path1 path2] [--reference_video clip.mp4] [--reference_audio sound.wav] \
   [--first_frame path] [--last_frame path] \
   [--ratio 16:9]
 ```
@@ -29,10 +29,17 @@ environment; never place a server address in the script.
 | T2VA | Prompt only, with the ErosMax v9 workflow selected | `H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9.json` |
 | I2VA | `--first_frame` | `video_minimax_h3_i2v.json` |
 | FL2VA | `--first_frame` and `--last_frame` | `video_minimax_h3_i2v.json` |
-| Ref2VA | `--reference_image` | `video_minimax_h3_r2v.json` |
+| Ref2VA | Any of `--reference_image`, `--reference_video`, `--reference_audio` | `video_minimax_h3_r2v.json` |
 
 When providing images, the prompt must contain `<Picture 1>` through `<Picture N>` in image argument
-order. Do not combine reference images with first or last frames.
+order. Use `<Video 1>` through `<Video N>` for video references. Audio numbering
+starts with video soundtracks in video order, skips silent videos, and then
+continues with the standalone audio files. For example, a video with sound
+and a separate WAV use `<Video 1>` and `<Audio 2>` for the video and WAV.
+Reference images, videos, and audio can be combined in Ref2VA mode.
+First and last frames use a separate mode. The original workflow keeps Turbo for reference images and videos without
+audio tracks. If any reference video has an audio track or a standalone audio
+file is supplied, it uses the base Ref2VA model and res_multistep sampler.
 
 ## Parameters
 
@@ -43,6 +50,8 @@ order. Do not combine reference images with first or last frames.
 | `--first_frame` | By mode | - | First-frame image |
 | `--last_frame` | No | - | Last-frame image; requires first frame |
 | `--reference_image` | By mode | - | 1-9 ordered reference images |
+| `--reference_video` | By mode | - | 1–3 ordered video clips, preferably 2–15 seconds, sampled at 24 fps |
+| `--reference_audio` | By mode | - | 1–3 ordered standalone audio files |
 | `--ratio` | No | `16:9` | Aspect ratio |
 | `--duration` | No | `15` | Duration in seconds |
 | `--megapixels` | No | `0.7` | Output megapixels |
@@ -78,4 +87,5 @@ upscaler and RTX FrameGen 2× for 48 fps output.
 - `python3 -c "import requests"`
 - The server must have [Preview Video](https://github.com/elgalardi/ComfyUI-PreviewVideo)
   installed (node ID: `PreviewVideoTemporary`).
+- For video references, install `ffprobe` locally and Video Helper Suite (`VHS_LoadVideo`) on the server.
 - Confirm `COMFYUI_API_URL` is set.

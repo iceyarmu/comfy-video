@@ -9,6 +9,7 @@ import json
 import math
 import mimetypes
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -57,8 +58,12 @@ def get_base_url():
 def validate_args(args):
     if args.last_frame and not args.first_frame:
         fail("--last_frame requires --first_frame")
-    if args.reference_image and (args.first_frame or args.last_frame):
-        fail("--reference_image cannot be combined with --first_frame/--last_frame")
+    has_references = args.reference_image or args.reference_video or args.reference_audio
+    if has_references and (args.first_frame or args.last_frame):
+        fail("reference inputs cannot be combined with --first_frame/--last_frame")
+    for kind in ("video", "audio"):
+        if len(getattr(args, f"reference_{kind}")) > 3:
+            fail(f"--reference_{kind} supports at most 3 files")
     if args.reference_image and len(args.reference_image) > 9:
         fail("--reference_image supports at most 9 images")
     if not math.isfinite(args.duration) or args.duration <= 0:
@@ -68,9 +73,9 @@ def validate_args(args):
     if args.steps is not None and args.steps <= 0:
         fail("--steps must be positive")
 
-    if args.reference_image:
+    if has_references:
         mode = "ref2va"
-        images = args.reference_image
+        images = args.reference_image or []
     elif args.last_frame:
         mode = "fl2va"
         images = [args.first_frame, args.last_frame]
@@ -90,11 +95,39 @@ def validate_args(args):
             fail(f"unsupported image format: {path.suffix}")
         image_paths.append(path)
 
-    required_labels = range(1, len(image_paths) + 1)
-    missing = [f"<Picture {index}>" for index in required_labels if f"<Picture {index}>" not in args.prompt]
+    videos = []
+    for value in args.reference_video:
+        path = existing_file(value)
+        try:
+            probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "json", str(path)],
+                capture_output=True, text=True, check=True,
+            )
+            streams = {stream["codec_type"] for stream in json.loads(probe.stdout)["streams"]}
+        except FileNotFoundError:
+            fail("ffprobe is required for --reference_video")
+        except (subprocess.CalledProcessError, ValueError, KeyError) as exc:
+            fail(f"cannot inspect reference video {path}: {exc}")
+        if "video" not in streams:
+            fail(f"no video stream in {path}")
+        videos.append((path, "audio" in streams))
+    audios = [existing_file(value) for value in args.reference_audio]
+    # H3 numbers paired soundtracks before standalone audio references.
+    offset = sum(has_audio for _, has_audio in videos)
+    labels = ([f"<Picture {i + 1}>" for i in range(len(image_paths))]
+              + [f"<Video {i + 1}>" for i in range(len(videos))]
+              + [f"<Audio {offset + i + 1}>" for i in range(len(audios))])
+    missing = [label for label in labels if label not in args.prompt]
     if missing:
-        fail("prompt is missing required image labels: " + ", ".join(missing))
-    return mode, image_paths
+        fail("prompt is missing required reference labels: " + ", ".join(missing))
+    return mode, image_paths, videos, audios
+
+
+def existing_file(value):
+    path = Path(value).expanduser().resolve()
+    if not path.is_file():
+        fail(f"reference file not found: {path}")
+    return path
 
 
 def request_json(response, action):
@@ -108,12 +141,12 @@ def request_json(response, action):
         fail(f"{action} returned invalid JSON")
 
 
-def upload_image(session, base_url, path, index):
-    """Upload one image and return its annotated LoadImage reference."""
+def upload_media(session, base_url, path, index):
+    """Return a ComfyUI temporary file reference for any uploaded media."""
     safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in path.name)
     remote_name = f"comfy-video-{uuid.uuid4().hex[:8]}-{index + 1}-{safe_name}"
     mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-    print(f"Uploading image {index + 1}: {path}", file=sys.stderr)
+    print(f"Uploading file {index + 1}: {path}", file=sys.stderr)
     try:
         with path.open("rb") as handle:
             response = session.post(
@@ -123,15 +156,15 @@ def upload_image(session, base_url, path, index):
                 timeout=120,
             )
     except requests.RequestException as exc:
-        fail(f"image upload failed: {exc}")
-    result = request_json(response, "image upload")
+        fail(f"file upload failed: {exc}")
+    result = request_json(response, "file upload")
     name = result.get("name")
     if not name:
         fail(f"unexpected upload response: {result}")
     subfolder = result.get("subfolder") or ""
     reference = f"{subfolder}/{name}" if subfolder else name
     if result.get("type") != "temp":
-        fail("server did not acknowledge a temporary image upload")
+        fail("server did not acknowledge a temporary file upload")
     return f"{reference} [temp]"
 
 
@@ -255,6 +288,41 @@ def patch_workflow(workflow, mode, remote_images, args):
     return workflow
 
 
+def attach_media_references(workflow, videos, audios):
+    if not videos and not audios:
+        return
+    inputs = one_node(workflow, "MiniMaxH3ReferenceToVideo")[1]["inputs"]
+    # The Turbo LoRA omits the reference-audio timestep in its AdaLN update.
+    has_reference_audio = bool(audios) or any(has_audio for _, has_audio in videos)
+    if has_reference_audio and nodes_by_class(workflow, "MiniMaxH3TurboLoRA"):
+        lora_id, lora = one_node(workflow, "MiniMaxH3TurboLoRA")
+        turbo_id, _ = one_node(workflow, "MiniMaxH3TurboSampler")
+        sampler_id, _ = one_node(workflow, "KSamplerSelect")
+        for node in workflow.values():
+            for key, value in node["inputs"].items():
+                if value == [lora_id, 0]:
+                    node["inputs"][key] = lora["inputs"]["model"]
+                elif value == [turbo_id, 0]:
+                    node["inputs"][key] = [sampler_id, 0]
+        del workflow[lora_id], workflow[turbo_id]
+    for key in list(inputs):
+        if key.startswith(("ref_videos.", "ref_video_audios.", "ref_audios.")):
+            del inputs[key]
+    for index, (remote, has_audio) in enumerate(videos):
+        node_id = next_node_id(workflow)
+        workflow[node_id] = {"class_type": "VHS_LoadVideo", "inputs": {
+            "video": remote, "force_rate": 24, "custom_width": 0, "custom_height": 0,
+            "frame_load_cap": 0, "skip_first_frames": 0, "select_every_nth": 1,
+        }}
+        inputs[f"ref_videos.ref_video_{index}"] = [node_id, 0]
+        if has_audio:
+            inputs[f"ref_video_audios.ref_video_audio_{index}"] = [node_id, 2]
+    for index, remote in enumerate(audios):
+        node_id = next_node_id(workflow)
+        workflow[node_id] = {"class_type": "LoadAudio", "inputs": {"audio": remote}}
+        inputs[f"ref_audios.ref_audio_{index}"] = [node_id, 0]
+
+
 def submit_workflow(session, base_url, workflow):
     print("Submitting generation task...", file=sys.stderr)
     try:
@@ -297,6 +365,10 @@ def poll_history(session, base_url, prompt_id):
         entry = result.get(prompt_id)
         if entry:
             status = entry.get("status") or {}
+            if status.get("status_str") == "error":
+                error = next((data for event, data in status.get("messages", [])
+                              if event == "execution_error"), {})
+                fail(f"task {prompt_id} failed at {error.get('node_type')}: {error.get('exception_message')}")
             if status.get("completed"):
                 if status.get("status_str") != "success":
                     fail(f"task {prompt_id} failed: {status}")
@@ -352,6 +424,9 @@ def main():
         "--reference_image", nargs="+", action="extend",
         help="Reference image paths, up to 9 total; can be repeated",
     )
+    for kind in ("video", "audio"):
+        parser.add_argument(f"--reference_{kind}", nargs="+", action="extend", default=[],
+                            help=f"Reference {kind} paths, up to 3 total; can be repeated")
     parser.add_argument("--first_frame", help="First-frame image path")
     parser.add_argument("--last_frame", help="Last-frame image path; requires --first_frame")
     parser.add_argument("--ratio", choices=ASPECT_RATIOS, default="16:9")
@@ -364,14 +439,18 @@ def main():
     parser.add_argument("--filename", "-f", required=True, help="Output video path")
     args = parser.parse_args()
 
-    mode, image_paths = validate_args(args)
+    mode, image_paths, videos, audios = validate_args(args)
     workflow = load_workflow(mode, args.workflow)
     base_url = get_base_url()
     print(f"Mode: {mode}", file=sys.stderr)
 
     with requests.Session() as session:
-        remote_images = [upload_image(session, base_url, path, i) for i, path in enumerate(image_paths)]
+        remote_images = [upload_media(session, base_url, path, i) for i, path in enumerate(image_paths)]
         workflow = patch_workflow(workflow, mode, remote_images, args)
+        remote_videos = [(upload_media(session, base_url, path, i), has_audio)
+                         for i, (path, has_audio) in enumerate(videos)]
+        remote_audios = [upload_media(session, base_url, path, i) for i, path in enumerate(audios)]
+        attach_media_references(workflow, remote_videos, remote_audios)
         preview_id = prepare_video_preview(workflow)
         prompt_id = submit_workflow(session, base_url, workflow)
         entry = poll_history(session, base_url, prompt_id)
