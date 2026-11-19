@@ -91,12 +91,15 @@ def build_prompt(graph, images, mode, args, aspect_ratio):
     add(32, model=["37", 0], conditioning=second_conditioning)
     add(16, noise=["31", 0], sampler=["18", 0], sigmas=["102", 0])
     add(25, samples=["16", 0], vae=["3", 0])
-    add(39, images=["25", 0])
-    add(86, any_input=["35", 1], image_pass=["39", 0])
+    frames = add(39, images=["25", 0])
+    multiplier = sources[173][0]["widgets_values"][0]
+    if multiplier > 1:
+        frames = add(155, images=frames, **{"generation_type.multiplier": multiplier})
+    add(86, any_input=["35", 1], image_pass=frames)
     add(14, vae=["4", 0])
     grain = sources[174][0]["widgets_values"][0]
     preset = sources[178][0]["widgets_values"][0]
-    add(135, images=["39", 0], original_fps=24, grain=grain > 0,
+    add(135, images=frames, original_fps=24 * multiplier, grain=grain > 0,
         grain_intensity=grain, encoder_preset=preset)
     add(137, complete_audio=["14", 0])
     add(40, video=["137", 0], filename=sources[73][0]["widgets_values"][0])

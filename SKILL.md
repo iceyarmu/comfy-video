@@ -55,14 +55,15 @@ Use `--workflow H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9` for
 ErosMax two-pass generation from text alone or with any of the three image modes. The server
 needs the workflow's models and custom nodes. For v9, `--steps` sets the
 first pass (the second uses 3 steps), and `--megapixels` sets the second-pass
-target before RTX upscaling.
+target before RTX upscaling. Normal v9 generation uses the 2D FP16 latent
+upscaler and RTX FrameGen 2× for 48 fps output.
 
 ## Behavior
 
 - Upload inputs to ComfyUI's temporary directory and reference them with `[temp]`.
 - Submit the workflow once and poll history every 10 seconds for up to 30 minutes.
   A timed-out task may still be running; use its prompt ID rather than resubmitting.
-- Create Video combines the frames and soundtrack at 24 fps. Preview Video
+- The standard workflows combine the frames and soundtrack at 24 fps. Preview Video
   returns a temporary MP4; download it directly to `--filename`.
 - No generated file goes to the server's output directory. Temporary files and
   job history follow the server's retention policy; no deletion API is needed.
