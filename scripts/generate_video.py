@@ -23,8 +23,8 @@ import erosmax_v9
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-IMAGE_WORKFLOW = SKILL_ROOT / "workflows" / "video_minimax_h3_i2v.json"
-REFERENCE_WORKFLOW = SKILL_ROOT / "workflows" / "video_minimax_h3_r2v.json"
+WORKFLOW_DIR = SKILL_ROOT / "workflows"
+DEFAULT_WORKFLOW = WORKFLOW_DIR / f"{erosmax_v9.NAME}.json"
 POLL_INTERVAL = 10
 TIMEOUT = 1800
 SUPPORTED_IMAGE_EXTS = {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
@@ -168,17 +168,16 @@ def upload_media(session, base_url, path, index):
     return f"{reference} [temp]"
 
 
-def load_workflow(mode, custom_path):
-    default = REFERENCE_WORKFLOW if mode == "ref2va" else IMAGE_WORKFLOW
-    path = Path(custom_path).expanduser().resolve() if custom_path else default
+def load_workflow(custom_path):
+    path = Path(custom_path).expanduser().resolve() if custom_path else DEFAULT_WORKFLOW
     if custom_path and Path(custom_path).name == custom_path and not path.is_file():
         suffix = Path(custom_path).stem if custom_path.endswith(".json") else custom_path
-        for candidate in sorted(default.parent.glob("*.json")):
+        for candidate in sorted(WORKFLOW_DIR.glob("*.json")):
             if candidate.stem.endswith(suffix) and candidate.is_file():
                 path = candidate
                 break
         else:
-            fail(f"no bundled workflow name ends with {suffix!r} in {default.parent}")
+            fail(f"no bundled workflow name ends with {suffix!r} in {WORKFLOW_DIR}")
     try:
         workflow = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -435,12 +434,12 @@ def main():
     parser.add_argument("--steps", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--ref_image_size", choices=["match", "max"], default="match")
-    parser.add_argument("--workflow", help="Bundled workflow filename suffix (e.g. v9 or i2v) or workflow JSON path")
+    parser.add_argument("--workflow", help=f"Bundled filename suffix or workflow JSON path (default: {DEFAULT_WORKFLOW.name})")
     parser.add_argument("--filename", "-f", required=True, help="Output video path")
     args = parser.parse_args()
 
     mode, image_paths, videos, audios = validate_args(args)
-    workflow = load_workflow(mode, args.workflow)
+    workflow = load_workflow(args.workflow)
     base_url = get_base_url()
     print(f"Mode: {mode}", file=sys.stderr)
 

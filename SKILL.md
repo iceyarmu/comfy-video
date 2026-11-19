@@ -23,13 +23,15 @@ environment; never place a server address in the script.
 
 ## Modes
 
-| Mode | Trigger | Workflow |
+All modes load `workflows/H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9.json` when `--workflow` is omitted. To use an original workflow, pass
+the corresponding option below.
+
+| Mode | Trigger | Original workflow option |
 |---|---|---|
-| T2VA | Prompt only (default) | `video_minimax_h3_i2v.json` (FL2VA with both frames disconnected) |
-| T2VA | Prompt only, with the ErosMax v9 workflow selected | `H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9.json` |
-| I2VA | `--first_frame` | `video_minimax_h3_i2v.json` |
-| FL2VA | `--first_frame` and `--last_frame` | `video_minimax_h3_i2v.json` |
-| Ref2VA | Any of `--reference_image`, `--reference_video`, `--reference_audio` | `video_minimax_h3_r2v.json` |
+| T2VA | Prompt only | `--workflow i2v` |
+| I2VA | `--first_frame` | `--workflow i2v` |
+| FL2VA | `--first_frame` and `--last_frame` | `--workflow i2v` |
+| Ref2VA | Any of `--reference_image`, `--reference_video`, `--reference_audio` | `--workflow r2v` |
 
 When providing images, the prompt must contain `<Picture 1>` through `<Picture N>` in image argument
 order. Use `<Video 1>` through `<Video N>` for video references. Audio numbering
@@ -58,11 +60,9 @@ file is supplied, it uses the base Ref2VA model and res_multistep sampler.
 | `--steps` | No | Workflow value | Scheduler steps |
 | `--seed` | No | Workflow value | Noise seed |
 | `--ref_image_size` | No | `match` | `match` or `max` |
-| `--workflow` | No | Bundled workflow | Workflow JSON path or bundled filename suffix (e.g. `i2v` or `v9`). Multiple matches use the first filename in sorted order. |
+| `--workflow` | No | `H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9.json` | Workflow JSON path or bundled filename suffix (e.g. `i2v` or `v9`). Multiple matches use the first filename in sorted order. |
 
-Use `--workflow H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9` for
-ErosMax two-pass generation from text alone or with any of the three image modes. The server
-needs the workflow's models and custom nodes. For v9, `--steps` sets the
+The server needs the workflow's models and custom nodes. For v9, `--steps` sets the
 first pass (the second uses 3 steps), and `--megapixels` sets the second-pass
 target before RTX upscaling. Normal v9 generation uses the 2D FP16 latent
 upscaler and RTX FrameGen 2× for 48 fps output.
