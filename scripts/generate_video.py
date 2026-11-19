@@ -18,6 +18,8 @@ from urllib.parse import quote, urlsplit
 
 import requests
 
+import erosmax_v9
+
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 IMAGE_WORKFLOW = SKILL_ROOT / "workflows" / "video_minimax_h3_i2v.json"
@@ -134,6 +136,8 @@ def upload_image(session, base_url, path, index):
 
 def load_workflow(mode, custom_path):
     default = REFERENCE_WORKFLOW if mode == "ref2va" else IMAGE_WORKFLOW
+    if custom_path == erosmax_v9.NAME:
+        custom_path = SKILL_ROOT / "workflows" / f"{erosmax_v9.NAME}.json"
     path = Path(custom_path).expanduser().resolve() if custom_path else default
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -203,6 +207,10 @@ def set_common_options(workflow, video_node, args):
             node.setdefault("inputs", {})["noise_seed"] = args.seed
 
 def patch_workflow(workflow, mode, remote_images, args):
+    if workflow.get("id") == erosmax_v9.GRAPH_ID and "nodes" in workflow:
+        return erosmax_v9.build_prompt(workflow, remote_images, mode, args, ASPECT_RATIOS[args.ratio])
+    if isinstance(workflow.get("nodes"), list):
+        fail("unsupported editor workflow; provide a compatible API-format JSON")
     if mode in {"i2va", "fl2va"}:
         video_node = one_node(workflow, "MiniMaxH3ImageToVideo")[1]
         set_image_input(workflow, video_node, "first_frame", remote_images[0])
@@ -341,7 +349,7 @@ def main():
     parser.add_argument("--steps", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--ref_image_size", choices=["match", "max"], default="match")
-    parser.add_argument("--workflow", help="Compatible API-format workflow JSON")
+    parser.add_argument("--workflow", help="Bundled ErosMax v9 workflow name or compatible workflow JSON path")
     parser.add_argument("--filename", "-f", required=True, help="Output video path")
     args = parser.parse_args()
 
@@ -350,10 +358,10 @@ def main():
     workflow = load_workflow(mode, args.workflow)
     print(f"Mode: {mode}", file=sys.stderr)
 
-    preview_id = prepare_video_preview(workflow)
     with requests.Session() as session:
         remote_images = [upload_image(session, base_url, path, i) for i, path in enumerate(image_paths)]
-        patch_workflow(workflow, mode, remote_images, args)
+        workflow = patch_workflow(workflow, mode, remote_images, args)
+        preview_id = prepare_video_preview(workflow)
         prompt_id = submit_workflow(session, base_url, workflow)
         entry = poll_history(session, base_url, prompt_id)
         saved_path = download_video(session, base_url, entry, preview_id, args.filename)

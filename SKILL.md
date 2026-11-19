@@ -47,7 +47,13 @@ order. Do not combine reference images with first or last frames.
 | `--steps` | No | Workflow value | Scheduler steps |
 | `--seed` | No | Workflow value | Noise seed |
 | `--ref_image_size` | No | `match` | `match` or `max` |
-| `--workflow` | No | Bundled workflow | Compatible API workflow JSON |
+| `--workflow` | No | Bundled workflow | Compatible API workflow JSON path or bundled ErosMax v9 name |
+
+Use `--workflow H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9` for
+ErosMax two-pass generation with any of the three image modes. The server
+needs the workflow's models and custom nodes. For v9, `--steps` sets the
+first pass (the second uses 3 steps), and `--megapixels` sets the second-pass
+target before RTX upscaling.
 
 ## Behavior
 
