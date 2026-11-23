@@ -1193,12 +1193,12 @@
       },
       "widgets_values": [
         "4:3 (Standard)",
-        0.7,
+        1.0,
         32
       ],
       "widgets_values_named": {
         "aspect_ratio": "4:3 (Standard)",
-        "megapixels": 0.7,
+        "megapixels": 1.0,
         "multiple": 32
       },
       "color": "#432",
@@ -2992,14 +2992,14 @@
       },
       "widgets_values": [
         "scale by multiplier",
-        1.2,
+        1.41,
         "ULTRA",
         1,
         "10-bit RGB (RGB10A2)"
       ],
       "widgets_values_named": {
         "resize_type": "scale by multiplier",
-        "resize_type.scale": 1.2,
+        "resize_type.scale": 1.41,
         "quality": "ULTRA",
         "strength": 1,
         "image_encoding": "10-bit RGB (RGB10A2)"

@@ -47,7 +47,9 @@ def build_prompt(graph, images, mode, args, aspect_ratio):
     add(15)
     add(17, value=args.duration)
     add(20, aspect_ratio=aspect_ratio)
-    add(23, value=args.megapixels)
+    add(23)
+    if args.megapixels is not None:
+        prompt["23"]["inputs"]["value"] = args.megapixels
     add(30)
     add(38, model=["30", 0])  # all optional LoRA rows are disabled in v9
     add(100)

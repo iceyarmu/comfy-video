@@ -68,7 +68,7 @@ def validate_args(args):
         fail("--reference_image supports at most 9 images")
     if not math.isfinite(args.duration) or args.duration <= 0:
         fail("--duration must be a finite positive number")
-    if not math.isfinite(args.megapixels) or args.megapixels <= 0:
+    if args.megapixels is not None and (not math.isfinite(args.megapixels) or args.megapixels <= 0):
         fail("--megapixels must be a finite positive number")
     if args.steps is not None and args.steps <= 0:
         fail("--steps must be positive")
@@ -234,7 +234,7 @@ def set_common_options(workflow, video_node, args):
     one_node(workflow, "PrimitiveFloat")[1].setdefault("inputs", {})["value"] = args.duration
 
     resolution = one_node(workflow, "ResolutionSelector")[1].setdefault("inputs", {})
-    resolution["megapixels"] = args.megapixels
+    resolution["megapixels"] = 0.7 if args.megapixels is None else args.megapixels
     resolution["aspect_ratio"] = ASPECT_RATIOS[args.ratio]
 
     if args.steps is not None:
@@ -430,7 +430,7 @@ def main():
     parser.add_argument("--last_frame", help="Last-frame image path; requires --first_frame")
     parser.add_argument("--ratio", choices=ASPECT_RATIOS, default="16:9")
     parser.add_argument("--duration", type=float, default=15.0)
-    parser.add_argument("--megapixels", type=float, default=0.7)
+    parser.add_argument("--megapixels", type=float, help="Generation megapixels (v9 refinement: 1.0, original: 0.7)")
     parser.add_argument("--steps", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--ref_image_size", choices=["match", "max"], default="match")
