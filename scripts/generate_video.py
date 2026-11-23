@@ -430,7 +430,7 @@ def main():
     parser.add_argument("--last_frame", help="Last-frame image path; requires --first_frame")
     parser.add_argument("--ratio", choices=ASPECT_RATIOS, default="16:9")
     parser.add_argument("--duration", type=float, default=15.0)
-    parser.add_argument("--megapixels", type=float, help="Generation megapixels (v9 refinement: 1.0, original: 0.7)")
+    parser.add_argument("--megapixels", type=float, help="Target megapixels (v9 generates up to 1 MP and uses RTX above 1 MP; default output ~2.1 MP, original 0.7 MP)")
     parser.add_argument("--steps", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--ref_image_size", choices=["match", "max"], default="match")

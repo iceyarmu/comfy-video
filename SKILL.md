@@ -56,16 +56,17 @@ file is supplied, it uses the base Ref2VA model and res_multistep sampler.
 | `--reference_audio` | By mode | - | 1–3 ordered standalone audio files |
 | `--ratio` | No | `16:9` | Aspect ratio |
 | `--duration` | No | `15` | Duration in seconds |
-| `--megapixels` | No | v9: `1.0`, original: `0.7` | Generation megapixels (second-pass target for v9) |
+| `--megapixels` | No | v9: ~2.1, original: 0.7 | Target output megapixels |
 | `--steps` | No | Workflow value | Scheduler steps |
 | `--seed` | No | Workflow value | Noise seed |
 | `--ref_image_size` | No | `match` | `match` or `max` |
 | `--workflow` | No | `H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9.json` | Workflow JSON path or bundled filename suffix (e.g. `i2v` or `v9`). Multiple matches use the first filename in sorted order. |
 
 The server needs the workflow's models and custom nodes. For v9, `--steps` sets the
-first pass (the second uses 3 steps), and `--megapixels` sets the second-pass
-target before RTX upscaling. Both v9 passes default to 1 MP. RTX scales each
-dimension by 1.41 for approximately 2.1 million output pixels. Normal v9 generation uses the 2D FP16 latent
+first pass (the second uses 3 steps). With an explicit megapixel target, both
+passes generate at the requested size up to 1 MP. Above 1 MP they generate at
+1 MP and RTX scales to the requested output dimensions. Omitting the option
+uses the workflow default of 1 MP followed by 1.41× RTX super-resolution. Normal v9 generation uses the 2D FP16 latent
 upscaler and RTX FrameGen 2× for 48 fps output.
 
 ## Behavior

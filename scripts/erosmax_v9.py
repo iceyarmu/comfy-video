@@ -1,5 +1,6 @@
 """Build the normal two-pass API prompt from the bundled ErosMax v9 editor graph."""
 
+import math
 import secrets
 
 NAME = "H3_Turbo_2Pass_ErosMax_b7_advanced_refmods_v9"
@@ -48,8 +49,11 @@ def build_prompt(graph, images, mode, args, aspect_ratio):
     add(17, value=args.duration)
     add(20, aspect_ratio=aspect_ratio)
     add(23)
-    if args.megapixels is not None:
-        prompt["23"]["inputs"]["value"] = args.megapixels
+    target_mp = args.megapixels
+    if target_mp is not None:
+        generation_mp = min(target_mp, 1.0)
+        prompt["20"]["inputs"]["megapixels"] = generation_mp
+        prompt["23"]["inputs"]["value"] = generation_mp
     add(30)
     add(38, model=["30", 0])  # all optional LoRA rows are disabled in v9
     add(100)
@@ -92,8 +96,20 @@ def build_prompt(graph, images, mode, args, aspect_ratio):
     add(10, video_latent=["199", 0])
     add(32, model=["37", 0], conditioning=second_conditioning)
     add(16, noise=["31", 0], sampler=["18", 0], sigmas=["102", 0])
-    add(25, samples=["16", 0], vae=["3", 0])
-    frames = add(39, images=["25", 0])
+    frames = add(25, samples=["16", 0], vae=["3", 0])
+    if target_mp is None:
+        frames = add(39, images=frames)
+    elif target_mp > 1.0:
+        # Target dimensions avoid scaling the rounding error of the latent grid.
+        w, h = map(int, args.ratio.split(":"))
+        side = math.sqrt(target_mp) * 1000
+        width = 8 * round(side * math.sqrt(w / h) / 8)
+        height = 8 * round(side * math.sqrt(h / w) / 8)
+        if max(width, height) > 8192:
+            raise SystemExit("RTX target dimensions exceed the 8192-pixel limit")
+        frames = add(39, images=frames, resize_type="target dimensions",
+                     **{"resize_type.width": width, "resize_type.height": height})
+        del prompt["39"]["inputs"]["resize_type.scale"]
     multiplier = sources[173][0]["widgets_values"][0]
     if multiplier > 1:
         frames = add(155, images=frames, **{"generation_type.multiplier": multiplier})
